@@ -10,6 +10,7 @@ import { createPlayer, updatePlayer, drawPlayer, ANIM } from './player.js';
 import { updateEntities, drawEntities, ENTITY_TYPES } from './entities.js';
 import { drawItem, itemScore, ITEM_TYPES } from './items.js';
 import { input } from './input.js';
+import { drawTiledRect } from './sprites.js';
 
 const W   = CONFIG.INTERNAL_WIDTH;
 const H   = CONFIG.INTERNAL_HEIGHT;
@@ -264,7 +265,8 @@ export class Game {
       const isWall = plat.w === 8 && (plat.x === 0 || plat.x === W - 8);
 
       if (isWall) {
-        // Stone wall with horizontal seams and diamond carvings
+        // Stone wall — try sprite texture first
+        if (!drawTiledRect(ctx, 'tile_wall', plat.x, plat.y, plat.w, plat.h)) {
         ctx.fillStyle = '#5533aa';
         ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
         ctx.fillStyle = '#3322aa';
@@ -283,8 +285,10 @@ export class Game {
           ctx.closePath();
           ctx.stroke();
         }
+        } // end sprite fallback
       } else {
-        // Stone brick platform
+        // Stone brick platform — try sprite texture first
+        if (!drawTiledRect(ctx, 'tile_floor', plat.x, plat.y, plat.w, plat.h)) {
         ctx.fillStyle = '#7755cc';
         ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
         // Top highlight
@@ -298,6 +302,7 @@ export class Game {
         for (let sx = plat.x + 16; sx < plat.x + plat.w; sx += 16) {
           ctx.fillRect(sx, plat.y, 1, plat.h);
         }
+        } // end sprite fallback
       }
     }
 

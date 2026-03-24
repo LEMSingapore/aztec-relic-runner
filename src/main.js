@@ -6,6 +6,10 @@
 import { CONFIG } from './config.js';
 import { Game } from './game.js';
 import { input } from './input.js';
+import { initSprites } from './sprites.js';
+
+// Pre-load all sprites (async, game falls back to shapes while loading)
+initSprites();
 
 const IW = CONFIG.INTERNAL_WIDTH;
 const IH = CONFIG.INTERNAL_HEIGHT;

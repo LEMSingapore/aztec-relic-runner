@@ -4,6 +4,18 @@
  */
 
 import { CONFIG } from './config.js';
+import { drawItemSprite } from './sprites.js';
+
+// Map item types to sprite names
+const ITEM_SPRITE_MAP = {
+  'key_red':   'key_red',
+  'key_blue':  'key_blue',
+  'key_green': 'key_green',
+  'jewel':     'jewel',
+  'amulet':    'amulet',
+  'torch':     'torch',
+  'sword':     'sword',
+};
 
 // Item type constants
 export const ITEM_TYPES = {
@@ -70,6 +82,13 @@ export function drawItem(ctx, item) {
   // Float animation: ±2px sine wave
   const floatY = item.y + Math.sin(Date.now() / 400 + item.x) * 2;
   const y = floatY;
+
+  // Try sprite first
+  const spriteName = ITEM_SPRITE_MAP[type];
+  if (spriteName) {
+    const drew = drawItemSprite(ctx, spriteName, x + item.width / 2, floatY + item.height / 2, 16);
+    if (drew) return;
+  }
 
   ctx.fillStyle = color;
 

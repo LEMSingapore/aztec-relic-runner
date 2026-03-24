@@ -6,6 +6,7 @@
 
 import { CONFIG } from './config.js';
 import { input } from './input.js';
+import { drawPlayerSprite } from './sprites.js';
 
 const C = CONFIG;
 const W = C.INTERNAL_WIDTH;
@@ -226,32 +227,33 @@ export function drawPlayer(ctx, player) {
   const C2 = CONFIG.COLORS;
 
   if (dead) {
-    // Flashing death animation
     if (Math.floor(deathTimer / 4) % 2 === 0) return;
   }
 
-  ctx.save();
+  // Pick sprite frame
+  let frameIndex = 0;
+  if (anim === ANIM.WALK)  frameIndex = (animFrame % 2 === 0) ? 0 : 1;
+  if (anim === ANIM.JUMP)  frameIndex = 2;
+  if (anim === ANIM.CLIMB) frameIndex = 3;
+  if (anim === ANIM.DEAD)  frameIndex = 3;
 
+  // Try sprite first
+  const drew = drawPlayerSprite(ctx, x - 2, y - 2, width + 4, height + 4, frameIndex, !facingRight);
+  if (drew) return;
+
+  // Fallback: shape-based player
+  ctx.save();
   if (!facingRight) {
-    // Flip horizontally
     ctx.translate(x + width / 2, 0);
     ctx.scale(-1, 1);
     ctx.translate(-(x + width / 2), 0);
   }
-
-  // Body
   ctx.fillStyle = C2.PLAYER;
   ctx.fillRect(x + 2, y + 8, width - 4, height - 8);
-
-  // Head
   ctx.fillStyle = '#ffcc88';
   ctx.fillRect(x + 3, y, width - 6, 9);
-
-  // Eyes
   ctx.fillStyle = '#222';
   ctx.fillRect(x + width - 7, y + 2, 2, 2);
-
-  // Legs (animated walk)
   ctx.fillStyle = '#cc6600';
   if (anim === ANIM.WALK) {
     const legOff = (animFrame % 2 === 0) ? 2 : -2;
@@ -261,14 +263,5 @@ export function drawPlayer(ctx, player) {
     ctx.fillRect(x + 2, y + height - 6, 4, 6);
     ctx.fillRect(x + width - 6, y + height - 6, 4, 6);
   }
-
-  // Arms (climbing)
-  if (anim === ANIM.CLIMB) {
-    ctx.fillStyle = C2.PLAYER;
-    const armOff = (animFrame % 2 === 0) ? -2 : 2;
-    ctx.fillRect(x - 3, y + 8 + armOff, 5, 4);
-    ctx.fillRect(x + width - 2, y + 8 - armOff, 5, 4);
-  }
-
   ctx.restore();
 }

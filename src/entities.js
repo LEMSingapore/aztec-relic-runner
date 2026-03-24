@@ -6,6 +6,7 @@
  */
 
 import { CONFIG } from './config.js';
+import { drawSkullSprite, drawSpiderSprite, drawFireSprite } from './sprites.js';
 
 export const ENTITY_TYPES = {
   SKULL:    'skull',
@@ -144,6 +145,9 @@ export function drawEntities(ctx, entities) {
 }
 
 function drawSkull(ctx, skull) {
+  const frame = Math.floor(skull.bounceTimer / 8) % 4;
+  if (drawSkullSprite(ctx, skull.x - 2, skull.y - 2, skull.width + 4, skull.height + 4, frame)) return;
+
   const cx = skull.x + 10;
   const cy = skull.y + 8;
 
@@ -183,6 +187,9 @@ function drawSkull(ctx, skull) {
 }
 
 function drawSpider(ctx, spider) {
+  const frame = Math.floor(Math.abs(spider.y) / 10) % 4;
+  if (drawSpiderSprite(ctx, spider.x - 3, spider.y - 3, spider.width + 6, spider.height + 6, frame)) return;
+
   const cx = spider.x + 7;
   const cy = spider.y + 6;
 
@@ -228,6 +235,8 @@ function drawSpider(ctx, spider) {
 }
 
 function drawFirePit(ctx, fp) {
+  if (drawFireSprite(ctx, fp.x, fp.y - 8, fp.width, fp.height + 8, fp.animFrame)) return;
+
   // Orange glow base
   ctx.fillStyle = 'rgba(255,100,0,0.3)';
   ctx.fillRect(fp.x - 4, fp.y + 4, fp.width + 8, 10);
