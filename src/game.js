@@ -1,296 +1,457 @@
-// game.js — Top-level Game class: state, update, draw, HUD, overlays
+/**
+ * game.js — Game state manager
+ * Owns: current room, player instance, inventory, score, lives, game state.
+ * Acts as the central coordinator between all subsystems.
+ */
 
 import { CONFIG } from './config.js';
-import { World }  from './world.js';
-import { Player } from './player.js';
-import { rectsOverlap } from './trap.js';
+import { PyramidMap } from './pyramid.js';
+import { createPlayer, updatePlayer, drawPlayer, ANIM } from './player.js';
+import { updateEntities, drawEntities, ENTITY_TYPES } from './entities.js';
+import { drawItem, itemScore, ITEM_TYPES } from './items.js';
+import { input } from './input.js';
 
-const C  = CONFIG.COL;
-const RW = CONFIG.ROOM_W;
-const RH = CONFIG.ROOM_H;
+const W   = CONFIG.INTERNAL_WIDTH;
+const H   = CONFIG.INTERNAL_HEIGHT;
+const HUD = CONFIG.HUD_HEIGHT;
+
+/** Top-level game states */
+export const GAME_STATE = {
+  TITLE:     'title',
+  PLAYING:   'playing',
+  DEAD:      'dead',       // brief death pause before respawn
+  GAME_OVER: 'game_over',
+  VICTORY:   'victory',
+};
+
+const DEATH_PAUSE = 80;   // frames to show death before respawning / game over
 
 export class Game {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx    = canvas.getContext('2d');
-
-    /** @type {Map<string,boolean>} live keyboard state */
-    this._keys = new Map();
-
-    /** track keys that were "just pressed" this frame */
-    this._keysDown = new Set();
-
-    this._bindInput();
-    this._init();
+  constructor() {
+    this.state      = GAME_STATE.TITLE;
+    this.score      = 0;
+    this.lives      = CONFIG.STARTING_LIVES;
+    this.inventory  = { key_red: 0, key_blue: 0, key_green: 0 };
+    this.pyramid    = null;
+    this.currentRoom = null;
+    this.player     = null;
+    this.deathTimer = 0;
+    this.victoryTimer = 0;
+    // Track which room the player spawns into on death (most recent room entry)
+    this._spawnRoom  = 0;
+    this._spawnX     = 0;
+    this._spawnY     = 0;
+    this.transitioning = false;
   }
 
-  // ── Lifecycle ────────────────────────────────────────────────────────
-
-  /** (Re)initialise all game state. */
-  _init() {
-    this.world       = new World();
-    this.currentRoom = this.world.startRoom;
-
-    const sp = this.currentRoom.spawnPos;
-    this.player = new Player(sp.x, sp.y);
-
-    this.score    = 0;
-    this.hasIdol  = false;
-    this.gameOver = false;
-    this.victory  = false;
-
-    // Damage cooldown per-room (prevent frame-spam)
-    this._spikeDmgCd  = 0;
-    this._enemyDmgCd  = 0;
-
-    // Transition flash
-    this._flashTimer = 0;
+  /** Start or restart the game */
+  start() {
+    this.score     = 0;
+    this.lives     = CONFIG.STARTING_LIVES;
+    this.inventory = { key_red: 0, key_blue: 0, key_green: 0 };
+    this.pyramid   = new PyramidMap();
+    this._enterRoom(this.pyramid.startRoomId, W / 2 - CONFIG.PLAYER_WIDTH / 2, HUD + 10);
+    this.state     = GAME_STATE.PLAYING;
   }
 
-  /** Main update — called every frame with delta time (seconds). */
-  update(dt) {
-    if (this.gameOver || this.victory) {
-      // R → restart
-      if (this._keysDown.has('KeyR')) this._init();
-      this._keysDown.clear();
-      return;
+  _enterRoom(roomId, spawnX, spawnY) {
+    this.currentRoom = this.pyramid.getRoom(roomId);
+    this.player = createPlayer(spawnX, spawnY);
+    this._spawnRoom = roomId;
+    this._spawnX = spawnX;
+    this._spawnY = spawnY;
+  }
+
+  /** Main update — called once per frame */
+  update() {
+    switch (this.state) {
+      case GAME_STATE.TITLE:     this._updateTitle();   break;
+      case GAME_STATE.PLAYING:   this._updatePlaying(); break;
+      case GAME_STATE.DEAD:      this._updateDead();    break;
+      case GAME_STATE.GAME_OVER: this._updateGameOver();break;
+      case GAME_STATE.VICTORY:   this._updateVictory(); break;
     }
+  }
 
+  // ─── State handlers ──────────────────────────────────────────────────────
+
+  _updateTitle() {
+    if (input.restartPressed || input.jumpPressed) {
+      this.start();
+    }
+  }
+
+  _updatePlaying() {
     const room   = this.currentRoom;
     const player = this.player;
 
-    // Room update (enemies, collectible bobs)
-    room.update(dt);
+    // Update player physics
+    updatePlayer(player, room);
 
-    // Player update
-    player.update(dt, this._keys, room);
+    // Update entities
+    updateEntities(room.entities);
 
-    // Flash timer
-    if (this._flashTimer > 0) this._flashTimer -= dt;
+    // ── Item pickup ──────────────────────────────────────────────────────
+    for (const item of room.items) {
+      if (!item.collected && _aabbOverlap(player, item)) {
+        item.collected = true;
+        this.score += itemScore(item.type);
+        if (item.type === ITEM_TYPES.KEY_RED)   this.inventory.key_red++;
+        if (item.type === ITEM_TYPES.KEY_BLUE)  this.inventory.key_blue++;
+        if (item.type === ITEM_TYPES.KEY_GREEN) this.inventory.key_green++;
 
-    // Cooldowns
-    this._spikeDmgCd  = Math.max(0, this._spikeDmgCd  - dt);
-    this._enemyDmgCd  = Math.max(0, this._enemyDmgCd  - dt);
-
-    if (player.state !== 'dead') {
-      this._checkCollectibles(room);
-      this._checkSpikes(room);
-      this._checkEnemies(room);
-      this._checkDoors(room);
-    }
-
-    // Death check
-    if (!player.alive) {
-      player.state = 'dead';
-      this.gameOver = true;
-    }
-
-    this._keysDown.clear();
-  }
-
-  /** Draw everything. */
-  draw() {
-    const ctx = this.ctx;
-    const room = this.currentRoom;
-
-    // Room
-    room.draw(ctx);
-
-    // Transition flash overlay
-    if (this._flashTimer > 0) {
-      ctx.fillStyle = `rgba(255,255,255,${this._flashTimer * 0.9})`;
-      ctx.fillRect(0, 0, RW, RH);
-    }
-
-    // Player
-    this.player.draw(ctx);
-
-    // HUD
-    this._drawHUD(ctx);
-
-    // Overlays
-    if (this.victory) this._drawOverlay(ctx, true);
-    else if (this.gameOver) this._drawOverlay(ctx, false);
-  }
-
-  // ── Input ────────────────────────────────────────────────────────────
-
-  _bindInput() {
-    window.addEventListener('keydown', e => {
-      this._keys.set(e.code, true);
-      this._keysDown.add(e.code);
-      // prevent arrow scroll
-      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
-        e.preventDefault();
-      }
-    });
-    window.addEventListener('keyup', e => {
-      this._keys.set(e.code, false);
-    });
-  }
-
-  // ── Collision helpers ────────────────────────────────────────────────
-
-  _checkCollectibles(room) {
-    const pb = this.player.bounds;
-    for (const col of room.collectibles) {
-      if (col.collected) continue;
-      if (!rectsOverlap(pb, col.bounds)) continue;
-      col.collected = true;
-      if (col.type === 'idol') {
-        this.hasIdol = true;
-        this.score  += CONFIG.IDOL_SCORE;
-      } else {
-        this.score += CONFIG.TREASURE_SCORE;
+        // Picking up amulet in treasure chamber = victory
+        if (item.type === ITEM_TYPES.AMULET && room.isTreasure) {
+          this.score += CONFIG.TREASURE_CHAMBER_BONUS;
+          this.state = GAME_STATE.VICTORY;
+          this.victoryTimer = 0;
+          return;
+        }
       }
     }
-  }
 
-  _checkSpikes(room) {
-    if (this._spikeDmgCd > 0) return;
-    const pb = this.player.bounds;
-    for (const spike of room.spikes) {
-      if (rectsOverlap(pb, spike.bounds)) {
-        this.player.takeDamage(spike.damage);
-        this._spikeDmgCd = 0.6;
-        break;
+    // ── Enemy / hazard collision ──────────────────────────────────────────
+    if (!player.dead) {
+      for (const e of room.entities) {
+        if (e.type === ENTITY_TYPES.FIRE_PIT) {
+          if (_aabbOverlap(player, e)) {
+            this._killPlayer();
+            return;
+          }
+        } else {
+          // Skull or spider
+          if (!e.dead && _aabbOverlap(player, e)) {
+            this._killPlayer();
+            return;
+          }
+        }
       }
     }
-  }
 
-  _checkEnemies(room) {
-    if (this._enemyDmgCd > 0) return;
-    const pb = this.player.bounds;
-    for (const enemy of room.enemies) {
-      if (!enemy.alive) continue;
-      if (rectsOverlap(pb, enemy.bounds)) {
-        this.player.takeDamage(1);
-        this._enemyDmgCd = 0.8;
-        break;
-      }
-    }
-  }
-
-  _checkDoors(room) {
-    const pb = this.player.bounds;
+    // ── Room transition via doors ─────────────────────────────────────────
     for (const door of room.doors) {
-      if (!rectsOverlap(pb, door.bounds)) continue;
+      if (!_aabbOverlap(player, door)) continue;
 
-      // Win condition: exit door + has idol
-      if (door.isExit && this.hasIdol) {
-        this.victory = true;
+      // Check if locked
+      if (door.color === 'red'   && this.inventory.key_red   === 0) continue;
+      if (door.color === 'blue'  && this.inventory.key_blue  === 0) continue;
+      if (door.color === 'green' && this.inventory.key_green === 0) continue;
+
+      // Consume key
+      if (door.color === 'red')   this.inventory.key_red--;
+      if (door.color === 'blue')  this.inventory.key_blue--;
+      if (door.color === 'green') this.inventory.key_green--;
+
+      this._enterRoom(door.toRoom, door.spawnX, door.spawnY);
+      return;
+    }
+
+    // ── Room transition via drop gaps (fall through floor holes) ─────────
+    for (const gap of room.dropGaps) {
+      const bottom = HUD + (H - HUD) - 16;
+      // Player falls off bottom of screen through a gap
+      if (player.y + player.height >= bottom - 2 &&
+          player.x + player.width > gap.x &&
+          player.x < gap.x + gap.w) {
+        this._enterRoom(gap.toRoom, gap.spawnX, gap.spawnY);
         return;
       }
+    }
 
-      // Room transition
-      const nextRoom = this.world.getRoom(door.toRoomId);
-      if (!nextRoom) continue;
-
-      this._transition(door, nextRoom);
-      return; // don't process more doors this frame
+    // ── Fell off bottom of screen (no gap) — die ──────────────────────────
+    if (player.y > H) {
+      this._killPlayer();
     }
   }
 
-  /** Teleport player to next room, positioned opposite the door they came through. */
-  _transition(door, nextRoom) {
-    this.currentRoom = nextRoom;
-    this._flashTimer = 0.18;
-
-    const sp = nextRoom.spawnPos;
-    const p  = this.player;
-
-    // Place player on the opposite side of where they entered
-    switch (door.side) {
-      case 'right': p.x = CONFIG.TILE;                  p.y = sp.y; break;
-      case 'left':  p.x = RW - CONFIG.TILE - p.w;      p.y = sp.y; break;
-      case 'down':  p.x = sp.x; p.y = CONFIG.TILE;                  break;
-      case 'up':    p.x = sp.x; p.y = RH - CONFIG.TILE - p.h;      break;
-    }
-    p.vx = 0;
-    p.vy = 0;
-    p.onGround = false;
+  _killPlayer() {
+    this.player.dead = true;
+    this.player.anim = ANIM.DEAD;
+    this.deathTimer = 0;
+    this.state = GAME_STATE.DEAD;
   }
 
-  // ── HUD ──────────────────────────────────────────────────────────────
+  _updateDead() {
+    this.deathTimer++;
+    if (this.deathTimer >= DEATH_PAUSE) {
+      this.lives--;
+      if (this.lives <= 0) {
+        this.state = GAME_STATE.GAME_OVER;
+      } else {
+        // Respawn in same room
+        this._enterRoom(this._spawnRoom, this._spawnX, this._spawnY);
+        this.state = GAME_STATE.PLAYING;
+      }
+    }
+  }
+
+  _updateGameOver() {
+    if (input.restartPressed) this.start();
+  }
+
+  _updateVictory() {
+    this.victoryTimer++;
+    if (input.restartPressed && this.victoryTimer > 60) this.start();
+  }
+
+  // ─── Rendering ───────────────────────────────────────────────────────────
+
+  /**
+   * Draw the current game frame onto ctx.
+   * @param {CanvasRenderingContext2D} ctx
+   */
+  draw(ctx) {
+    switch (this.state) {
+      case GAME_STATE.TITLE:     this._drawTitle(ctx);   break;
+      case GAME_STATE.PLAYING:
+      case GAME_STATE.DEAD:      this._drawPlaying(ctx); break;
+      case GAME_STATE.GAME_OVER: this._drawGameOver(ctx);break;
+      case GAME_STATE.VICTORY:   this._drawVictory(ctx); break;
+    }
+  }
+
+  _drawPlaying(ctx) {
+    const room = this.currentRoom;
+    const C    = CONFIG.COLORS;
+
+    // Background
+    ctx.fillStyle = room.bgColor;
+    ctx.fillRect(0, HUD, W, H - HUD);
+
+    // Draw platforms/walls
+    ctx.fillStyle = C.WALL;
+    for (const plat of room.platforms) {
+      ctx.fillStyle = C.FLOOR;
+      ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+      // Ledge highlight
+      ctx.fillStyle = C.WALL;
+      ctx.fillRect(plat.x, plat.y, plat.w, 2);
+    }
+
+    // Draw ladders
+    ctx.strokeStyle = C.LADDER;
+    ctx.lineWidth = 2;
+    for (const ladder of room.ladders) {
+      // Side rails
+      ctx.beginPath(); ctx.moveTo(ladder.x, ladder.y); ctx.lineTo(ladder.x, ladder.y + ladder.h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ladder.x + 8, ladder.y); ctx.lineTo(ladder.x + 8, ladder.y + ladder.h); ctx.stroke();
+      // Rungs
+      for (let ry = ladder.y; ry < ladder.y + ladder.h; ry += 8) {
+        ctx.beginPath(); ctx.moveTo(ladder.x, ry); ctx.lineTo(ladder.x + 8, ry); ctx.stroke();
+      }
+    }
+
+    // Draw chains
+    ctx.strokeStyle = C.CHAIN;
+    ctx.lineWidth = 2;
+    for (const chain of room.chains) {
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(chain.x + 2, chain.y); ctx.lineTo(chain.x + 2, chain.y + chain.h); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw doors
+    for (const door of room.doors) {
+      _drawDoor(ctx, door, this.inventory);
+    }
+
+    // Draw items
+    for (const item of room.items) {
+      drawItem(ctx, item);
+    }
+
+    // Draw entities
+    drawEntities(ctx, room.entities);
+
+    // Draw player
+    drawPlayer(ctx, this.player);
+
+    // Draw HUD
+    this._drawHUD(ctx);
+
+    // Room name banner (fade in)
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.font = '6px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(room.name.toUpperCase(), W / 2, HUD + 12);
+    ctx.textAlign = 'left';
+  }
 
   _drawHUD(ctx) {
-    // Semi-transparent bar
+    const C = CONFIG.COLORS;
     ctx.fillStyle = C.HUD_BG;
-    ctx.fillRect(0, 0, RW, 28);
-
-    // Health hearts
-    const maxH = CONFIG.PLAYER_MAX_HEALTH;
-    for (let i = 0; i < maxH; i++) {
-      ctx.fillStyle = i < this.player.health ? C.HEART_ON : C.HEART_OFF;
-      this._drawHeart(ctx, 10 + i * 22, 6, 14);
-    }
+    ctx.fillRect(0, 0, W, HUD);
 
     // Score
-    ctx.fillStyle = C.TEXT;
-    ctx.font = 'bold 13px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(`Score: ${this.score}`, RW / 2, 19);
-    ctx.textAlign = 'left';
+    ctx.fillStyle = C.SCORE_TEXT;
+    ctx.font = '8px monospace';
+    ctx.fillText(`SCORE:${this.score}`, 4, 13);
 
-    // Idol indicator
-    if (this.hasIdol) {
-      ctx.fillStyle = C.IDOL;
-      ctx.font = 'bold 13px monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText('☆ IDOL', RW - 8, 19);
-      ctx.textAlign = 'left';
+    // Lives
+    ctx.fillStyle = C.PLAYER;
+    ctx.fillText(`LIVES:${this.lives}`, 140, 13);
+
+    // Keys
+    const keyColors = [
+      { k: 'key_red',   color: C.KEY_RED },
+      { k: 'key_blue',  color: C.KEY_BLUE },
+      { k: 'key_green', color: C.KEY_GREEN },
+    ];
+    let kx = 230;
+    for (const { k, color } of keyColors) {
+      const count = this.inventory[k];
+      if (count > 0) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(kx + 4, 10, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = C.TEXT;
+        ctx.fillText(count, kx + 10, 13);
+        kx += 20;
+      }
     }
   }
 
-  /** Simple heart shape drawn with arcs. */
-  _drawHeart(ctx, x, y, size) {
-    const s = size / 2;
-    ctx.beginPath();
-    ctx.moveTo(x + s, y + size * 0.35);
-    ctx.bezierCurveTo(x + s,       y,             x + size, y,             x + size, y + size * 0.35);
-    ctx.bezierCurveTo(x + size,    y + size * 0.65, x + s, y + size * 0.9, x + s,  y + size);
-    ctx.bezierCurveTo(x + s,       y + size * 0.9, x,      y + size * 0.65, x,     y + size * 0.35);
-    ctx.bezierCurveTo(x,           y,             x + s,   y,             x + s,  y + size * 0.35);
-    ctx.closePath();
-    ctx.fill();
-  }
+  _drawTitle(ctx) {
+    const C = CONFIG.COLORS;
+    ctx.fillStyle = C.BG;
+    ctx.fillRect(0, 0, W, H);
 
-  // ── End-game overlays ────────────────────────────────────────────────
-
-  _drawOverlay(ctx, won) {
-    // Dim
-    ctx.fillStyle = won ? 'rgba(0,60,20,0.82)' : 'rgba(40,0,0,0.82)';
-    ctx.fillRect(0, 0, RW, RH);
-
-    const accentCol = won ? C.WIN : C.LOSE;
-    const headline  = won ? 'You escaped with the idol!' : 'You died in the tomb.';
-    const sub       = `Score: ${this.score}`;
-
-    // Box
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(RW / 2 - 190, RH / 2 - 70, 380, 140);
-    ctx.strokeStyle = accentCol;
+    // Pyramid decorative shape
+    ctx.strokeStyle = CONFIG.COLORS.WALL;
     ctx.lineWidth = 2;
-    ctx.strokeRect(RW / 2 - 190, RH / 2 - 70, 380, 140);
+    ctx.beginPath();
+    ctx.moveTo(W / 2, 40);
+    ctx.lineTo(W - 30, 160);
+    ctx.lineTo(30, 160);
+    ctx.closePath();
+    ctx.stroke();
 
-    // Headline
-    ctx.fillStyle = accentCol;
-    ctx.font = 'bold 22px monospace';
+    // Title
+    ctx.fillStyle = CONFIG.COLORS.TREASURE;
+    ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(headline, RW / 2, RH / 2 - 28);
+    ctx.fillText('MONTE CLONE', W / 2, 30);
 
-    // Sub
-    ctx.fillStyle = C.TEXT;
-    ctx.font = '16px monospace';
-    ctx.fillText(sub, RW / 2, RH / 2 + 10);
+    ctx.fillStyle = '#ff9944';
+    ctx.font = '8px monospace';
+    ctx.fillText("AZTEC RELIC RUNNER", W / 2, 44);
 
-    // Restart hint
-    ctx.fillStyle = 'rgba(255,255,255,0.65)';
-    ctx.font = '13px monospace';
-    ctx.fillText('Press  R  to restart', RW / 2, RH / 2 + 42);
+    ctx.fillStyle = CONFIG.COLORS.JEWEL;
+    ctx.font = '7px monospace';
+    ctx.fillText('FIND THE AMULET IN THE', W / 2, 170);
+    ctx.fillText('TREASURE CHAMBER!', W / 2, 180);
+
+    ctx.fillStyle = '#aaa';
+    ctx.font = '7px monospace';
+    ctx.fillText('ARROWS / WASD : MOVE & CLIMB', W / 2, 195);
+    ctx.fillText('SPACE / K : JUMP', W / 2, 205);
+
+    // Blink press start
+    if (Math.floor(Date.now() / 500) % 2 === 0) {
+      ctx.fillStyle = CONFIG.COLORS.TEXT;
+      ctx.font = '8px monospace';
+      ctx.fillText('PRESS SPACE TO START', W / 2, 220);
+    }
 
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
+  }
+
+  _drawGameOver(ctx) {
+    const C = CONFIG.COLORS;
+    ctx.fillStyle = '#110000';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#ff2222';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', W / 2, 100);
+
+    ctx.fillStyle = C.SCORE_TEXT;
+    ctx.font = '8px monospace';
+    ctx.fillText(`FINAL SCORE: ${this.score}`, W / 2, 120);
+
+    ctx.fillStyle = C.TEXT;
+    ctx.fillText('PRESS ENTER/R TO RETRY', W / 2, 140);
+    ctx.textAlign = 'left';
+  }
+
+  _drawVictory(ctx) {
+    const C = CONFIG.COLORS;
+    ctx.fillStyle = '#001100';
+    ctx.fillRect(0, 0, W, H);
+
+    // Pulsing gold title
+    const pulse = 0.7 + 0.3 * Math.sin(this.victoryTimer * 0.1);
+    ctx.fillStyle = `rgba(255,215,0,${pulse})`;
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('YOU FOUND THE AMULET!', W / 2, 80);
+
+    ctx.fillStyle = CONFIG.COLORS.JEWEL;
+    ctx.font = '10px monospace';
+    ctx.fillText('VICTORY!', W / 2, 100);
+
+    ctx.fillStyle = C.SCORE_TEXT;
+    ctx.font = '8px monospace';
+    ctx.fillText(`FINAL SCORE: ${this.score}`, W / 2, 120);
+
+    if (this.victoryTimer > 60 && Math.floor(Date.now() / 500) % 2 === 0) {
+      ctx.fillStyle = C.TEXT;
+      ctx.fillText('PRESS ENTER/R TO PLAY AGAIN', W / 2, 145);
+    }
+    ctx.textAlign = 'left';
+  }
+}
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+function _aabbOverlap(a, b) {
+  const bw = b.width  || b.w || 16;
+  const bh = b.height || b.h || 16;
+  return a.x < b.x + bw &&
+         a.x + a.width > b.x &&
+         a.y < b.y + bh &&
+         a.y + a.height > b.y;
+}
+
+function _drawDoor(ctx, door, inventory) {
+  const C = CONFIG.COLORS;
+  let color;
+  switch (door.color) {
+    case 'red':   color = C.DOOR_RED;   break;
+    case 'blue':  color = C.DOOR_BLUE;  break;
+    case 'green': color = C.DOOR_GREEN; break;
+    default:      color = '#444455';    break;  // open / passable
+  }
+
+  // Door frame
+  ctx.fillStyle = color;
+  ctx.fillRect(door.x, door.y, door.w, door.h);
+
+  // Door inner highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.fillRect(door.x + 2, door.y + 2, door.w - 4, door.h - 4);
+
+  // Lock icon if color-keyed
+  if (door.color !== 'open') {
+    // Check if player has the key — dim if missing
+    const hasKey =
+      (door.color === 'red'   && inventory.key_red   > 0) ||
+      (door.color === 'blue'  && inventory.key_blue  > 0) ||
+      (door.color === 'green' && inventory.key_green > 0);
+
+    if (!hasKey) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(door.x, door.y, door.w, door.h);
+      // Padlock circle
+      ctx.strokeStyle = '#ffdd00';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(door.x + door.w / 2, door.y + door.h / 2 - 4, 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ffdd00';
+      ctx.fillRect(door.x + door.w / 2 - 4, door.y + door.h / 2, 8, 6);
+    }
   }
 }

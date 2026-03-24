@@ -1,238 +1,257 @@
-// player.js — Player entity: physics, controls, rendering
+/**
+ * player.js — Player entity
+ * Handles position, velocity, movement, AABB collision with room geometry,
+ * ladder/chain climbing, jumping, and animation state.
+ */
 
 import { CONFIG } from './config.js';
-import { rectsOverlap } from './trap.js';
+import { input } from './input.js';
 
-const C = CONFIG.COL;
-const T = CONFIG.TILE;
+const C = CONFIG;
+const W = C.INTERNAL_WIDTH;
+const HUD = C.HUD_HEIGHT;
 
-/** How long the player is invincible after taking a hit (seconds). */
-const INV_DURATION = 0.8;
+/** Animation states */
+export const ANIM = {
+  IDLE:    'idle',
+  WALK:    'walk',
+  JUMP:    'jump',
+  CLIMB:   'climb',
+  DEAD:    'dead',
+};
 
-export class Player {
-  /**
-   * @param {number} x  Spawn x (top-left)
-   * @param {number} y  Spawn y (top-left)
-   */
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.w = CONFIG.PLAYER_WIDTH;
-    this.h = CONFIG.PLAYER_HEIGHT;
+/**
+ * Create a fresh player object.
+ * @param {number} x - Starting x (left edge)
+ * @param {number} y - Starting y (top edge)
+ */
+export function createPlayer(x, y) {
+  return {
+    x, y,
+    vx: 0,
+    vy: 0,
+    width:  C.PLAYER_WIDTH,
+    height: C.PLAYER_HEIGHT,
+    onGround:  false,
+    onLadder:  false,
+    onChain:   false,
+    facingRight: true,
+    anim: ANIM.IDLE,
+    animFrame: 0,
+    animTimer: 0,
+    dead: false,
+    deathTimer: 0,
+  };
+}
 
-    this.vx = 0;
-    this.vy = 0;
-
-    /** 'idle' | 'run' | 'jump' | 'climb' | 'dead' */
-    this.state = 'idle';
-
-    this.health = CONFIG.PLAYER_MAX_HEALTH;
-    this.onGround = false;
-    this.onLadder = false;
-
-    this._facingRight = true;
-    this._invTimer = 0;   // seconds remaining of invincibility
-    this._animT = 0;      // animation clock
+/**
+ * Update player for one frame.
+ * @param {object} player
+ * @param {object} room   - current room (platforms, ladders, chains, doors)
+ */
+export function updatePlayer(player, room) {
+  if (player.dead) {
+    player.deathTimer++;
+    return;
   }
 
-  // ── Public ──────────────────────────────────────────────────────────
+  const onClimbable = _checkClimbable(player, room);
 
-  get bounds() {
-    return { x: this.x, y: this.y, w: this.w, h: this.h };
-  }
-
-  get alive() {
-    return this.health > 0;
-  }
-
-  /** Inflict damage; respects i-frames. */
-  takeDamage(amount = 1) {
-    if (this._invTimer > 0 || !this.alive) return;
-    this.health = Math.max(0, this.health - amount);
-    this._invTimer = INV_DURATION;
-    if (this.health <= 0) this.state = 'dead';
-  }
-
-  /**
-   * Main update — call once per frame.
-   * @param {number}  dt    Delta time in seconds
-   * @param {Object}  keys  Map of KeyboardEvent.code → boolean
-   * @param {import('./room.js').Room} room  Current room
-   */
-  update(dt, keys, room) {
-    if (this.state === 'dead') return;
-
-    this._invTimer = Math.max(0, this._invTimer - dt);
-    this._animT += dt;
-
-    // ── Detect ladder overlap ─────────────────────────────────────────
-    this.onLadder = false;
-    for (const ladder of room.ladders) {
-      if (rectsOverlap(this.bounds, ladder.bounds)) {
-        this.onLadder = true;
-        break;
-      }
-    }
-
-    // ── Horizontal input ──────────────────────────────────────────────
-    let moveX = 0;
-    if (keys['ArrowLeft']  || keys['KeyA']) moveX -= 1;
-    if (keys['ArrowRight'] || keys['KeyD']) moveX += 1;
-    if (moveX !== 0) this._facingRight = moveX > 0;
-    this.vx = moveX * CONFIG.PLAYER_SPEED;
-
-    // ── Ladder physics ────────────────────────────────────────────────
-    if (this.onLadder) {
-      this.vy = 0; // hang by default
-      if (keys['ArrowUp']   || keys['KeyW']) this.vy = -CONFIG.CLIMB_SPEED;
-      if (keys['ArrowDown'] || keys['KeyS']) this.vy =  CONFIG.CLIMB_SPEED;
-
-      this.state = (this.vy !== 0) ? 'climb' : (moveX !== 0 ? 'run' : 'idle');
-
-      this.x += this.vx * dt;
-      this._clampX();
-      this.y += this.vy * dt;
-      this._resolveY(room, this.y - this.vy * dt);
-      return;
-    }
-
-    // ── Ground physics ────────────────────────────────────────────────
-    const wantsJump = keys['Space'] || keys['KeyK'] ||
-                      keys['ArrowUp'] || keys['KeyW'];
-    if (wantsJump && this.onGround) {
-      this.vy = CONFIG.PLAYER_JUMP_VEL;
-      this.onGround = false;
-    }
-
-    // Gravity
-    this.vy = Math.min(this.vy + CONFIG.GRAVITY * dt, CONFIG.MAX_FALL_SPEED);
-
-    // Move X → resolve
-    const prevY = this.y;
-    this.x += this.vx * dt;
-    this._clampX();
-    this._resolveX(room);
-
-    // Move Y → resolve
-    this.y += this.vy * dt;
-    this._resolveY(room, prevY);
-
-    // Update state
-    if (!this.onGround) {
-      this.state = 'jump';
-    } else if (moveX !== 0) {
-      this.state = 'run';
+  // ── Horizontal movement ──────────────────────────────────────────────────
+  if (!player.onLadder && !player.onChain) {
+    if (input.left) {
+      player.vx = -C.PLAYER_SPEED;
+      player.facingRight = false;
+    } else if (input.right) {
+      player.vx = C.PLAYER_SPEED;
+      player.facingRight = true;
     } else {
-      this.state = 'idle';
+      player.vx = 0;
     }
+  } else {
+    // While climbing, allow slight horizontal nudge to dismount
+    player.vx = 0;
   }
 
-  draw(ctx) {
-    // Flicker during invincibility
-    if (this._invTimer > 0 && Math.floor(this._invTimer * 12) % 2 === 0) return;
-
-    const { x, y, w, h } = this;
-
-    // Body fill
-    ctx.fillStyle = this.state === 'dead' ? '#888' : C.PLAYER;
-    ctx.fillRect(x, y, w, h);
-
-    // Inner body shading
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
-
-    // Face (eye + mouth)
-    ctx.fillStyle = '#2a1800';
-    if (this._facingRight) {
-      ctx.fillRect(x + w * 0.55, y + h * 0.28, 3, 3); // eye
-      const mw = this.state === 'jump' ? 3 : 5;
-      ctx.fillRect(x + w * 0.55, y + h * 0.55, mw, 2); // mouth
-    } else {
-      ctx.fillRect(x + w * 0.3, y + h * 0.28, 3, 3);
-      const mw = this.state === 'jump' ? 3 : 5;
-      ctx.fillRect(x + w * 0.18, y + h * 0.55, mw, 2);
-    }
-
-    // Archaeologist hat (brim + crown)
-    ctx.fillStyle = '#7a3810';
-    ctx.fillRect(x - 2, y - 5, w + 4, 3);  // brim
-    ctx.fillRect(x + 3, y - 11, w - 6, 7); // crown
-    ctx.fillStyle = '#5a2808';
-    ctx.fillRect(x + 3, y - 11, w - 6, 2); // hat band
-
-    // Climb animation: arms out
-    if (this.state === 'climb') {
-      const armWave = Math.sin(this._animT * 8) * 3;
-      ctx.fillStyle = C.PLAYER;
-      ctx.fillRect(x - 6, y + 6 + armWave, 6, 4);
-      ctx.fillRect(x + w, y + 6 - armWave, 6, 4);
-    }
-
-    // Run animation: leg bob
-    if (this.state === 'run') {
-      const leg = Math.sin(this._animT * 10) * 3;
-      ctx.fillStyle = C.PLAYER;
-      ctx.fillRect(x + 2, y + h, 5, 4 + leg);
-      ctx.fillRect(x + w - 7, y + h, 5, 4 - leg);
-    }
+  // ── Jumping ──────────────────────────────────────────────────────────────
+  if (input.jumpPressed && player.onGround && !player.onLadder && !player.onChain) {
+    player.vy = C.JUMP_VELOCITY;
+    player.onGround = false;
   }
 
-  // ── Private ──────────────────────────────────────────────────────────
-
-  _clampX() {
-    this.x = Math.max(0, Math.min(CONFIG.ROOM_W - this.w, this.x));
+  // ── Climb / descend ladders & chains ─────────────────────────────────────
+  if (onClimbable) {
+    if (input.up) {
+      player.vy = -C.CLIMB_SPEED;
+      player.onLadder = true;
+      player.onChain  = true;
+    } else if (input.down) {
+      player.vy = C.CLIMB_SPEED;
+      player.onLadder = true;
+      player.onChain  = true;
+    } else if (player.onLadder || player.onChain) {
+      player.vy = 0;
+    }
+  } else {
+    player.onLadder = false;
+    player.onChain  = false;
   }
 
-  /** Resolve horizontal collisions (only solid floor edges matter). */
-  _resolveX(room) {
-    // Only check the floor's left/right edges — floating platforms don't
-    // act as walls. Room boundary clamping handles the rest.
-    const fb = room.floor.bounds;
-    if (rectsOverlap(this.bounds, fb)) {
-      // If player is above the floor top, let _resolveY handle it
-      if (this.y + this.h > fb.y + 2) {
-        if (this.x + this.w / 2 < fb.x + fb.w / 2) {
-          this.x = fb.x - this.w;
-        } else {
-          this.x = fb.x + fb.w;
-        }
+  // ── Gravity (skip when on climbable) ─────────────────────────────────────
+  if (!player.onLadder && !player.onChain) {
+    player.vy += C.GRAVITY;
+    if (player.vy > C.MAX_FALL_SPEED) player.vy = C.MAX_FALL_SPEED;
+  }
+
+  // ── Move & collide ───────────────────────────────────────────────────────
+  player.x += player.vx;
+  _collideX(player, room);
+
+  player.y += player.vy;
+  _collideY(player, room);
+
+  // ── Clamp to screen horizontal bounds ───────────────────────────────────
+  if (player.x < 8) player.x = 8;
+  if (player.x + player.width > W - 8) player.x = W - 8 - player.width;
+
+  // ── Animation state ──────────────────────────────────────────────────────
+  _updateAnim(player);
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function _checkClimbable(player, room) {
+  const px = player.x + player.width / 2;
+  const py = player.y + player.height / 2;
+
+  for (const ladder of room.ladders) {
+    if (px >= ladder.x - 4 && px <= ladder.x + 12 &&
+        py >= ladder.y && py <= ladder.y + ladder.h) {
+      return true;
+    }
+  }
+  for (const chain of room.chains) {
+    if (px >= chain.x - 4 && px <= chain.x + 8 &&
+        py >= chain.y && py <= chain.y + chain.h) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Resolve horizontal AABB collision against all platforms */
+function _collideX(player, room) {
+  for (const plat of room.platforms) {
+    if (_overlaps(player, plat)) {
+      if (player.vx > 0) {
+        player.x = plat.x - player.width;
+      } else if (player.vx < 0) {
+        player.x = plat.x + plat.w;
       }
+      player.vx = 0;
     }
   }
+}
 
-  /**
-   * Resolve vertical collisions.
-   * @param {import('./room.js').Room} room
-   * @param {number} prevY  Y position before this frame's vertical move
-   */
-  _resolveY(room, prevY) {
-    this.onGround = false;
-    const allSurfaces = [room.floor, ...room.platforms];
-
-    for (const surf of allSurfaces) {
-      const sb = surf.bounds;
-      if (!rectsOverlap(this.bounds, sb)) continue;
-
-      const prevBottom = prevY + this.h;
-      const prevTop    = prevY;
-
-      if (this.vy >= 0 && prevBottom <= sb.y + 4) {
-        // Was at or above platform top → land on it
-        this.y = sb.y - this.h;
-        this.vy = 0;
-        this.onGround = true;
-      } else if (this.vy < 0 && prevTop >= sb.y + sb.h - 4) {
-        // Was below ceiling → hit head
-        this.y = sb.y + sb.h;
-        this.vy = 0;
+/** Resolve vertical AABB collision against all platforms */
+function _collideY(player, room) {
+  player.onGround = false;
+  for (const plat of room.platforms) {
+    if (_overlaps(player, plat)) {
+      if (player.vy > 0) {
+        // Landing on top
+        player.y = plat.y - player.height;
+        player.onGround = true;
+      } else if (player.vy < 0) {
+        // Hitting ceiling
+        player.y = plat.y + plat.h;
       }
-    }
-
-    // Hard clamp: don't escape bottom of room
-    if (this.y + this.h > CONFIG.ROOM_H) {
-      this.y = CONFIG.ROOM_H - this.h;
-      this.vy = 0;
-      this.onGround = true;
+      player.vy = 0;
     }
   }
+}
+
+/** AABB overlap test between player and a platform rect {x,y,w,h} */
+function _overlaps(player, rect) {
+  return player.x < rect.x + rect.w &&
+         player.x + player.width > rect.x &&
+         player.y < rect.y + rect.h &&
+         player.y + player.height > rect.y;
+}
+
+function _updateAnim(player) {
+  if (player.onLadder || player.onChain) {
+    player.anim = ANIM.CLIMB;
+  } else if (!player.onGround) {
+    player.anim = ANIM.JUMP;
+  } else if (player.vx !== 0) {
+    player.anim = ANIM.WALK;
+  } else {
+    player.anim = ANIM.IDLE;
+  }
+
+  player.animTimer++;
+  if (player.animTimer >= 8) {
+    player.animTimer = 0;
+    player.animFrame = (player.animFrame + 1) % 4;
+  }
+}
+
+// ─── Drawing ─────────────────────────────────────────────────────────────────
+
+/**
+ * Draw the player onto ctx.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} player
+ */
+export function drawPlayer(ctx, player) {
+  const { x, y, width, height, facingRight, anim, animFrame, dead, deathTimer } = player;
+  const C2 = CONFIG.COLORS;
+
+  if (dead) {
+    // Flashing death animation
+    if (Math.floor(deathTimer / 4) % 2 === 0) return;
+  }
+
+  ctx.save();
+
+  if (!facingRight) {
+    // Flip horizontally
+    ctx.translate(x + width / 2, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(-(x + width / 2), 0);
+  }
+
+  // Body
+  ctx.fillStyle = C2.PLAYER;
+  ctx.fillRect(x + 2, y + 8, width - 4, height - 8);
+
+  // Head
+  ctx.fillStyle = '#ffcc88';
+  ctx.fillRect(x + 3, y, width - 6, 9);
+
+  // Eyes
+  ctx.fillStyle = '#222';
+  ctx.fillRect(x + width - 7, y + 2, 2, 2);
+
+  // Legs (animated walk)
+  ctx.fillStyle = '#cc6600';
+  if (anim === ANIM.WALK) {
+    const legOff = (animFrame % 2 === 0) ? 2 : -2;
+    ctx.fillRect(x + 2, y + height - 6, 4, 6 + legOff);
+    ctx.fillRect(x + width - 6, y + height - 6, 4, 6 - legOff);
+  } else {
+    ctx.fillRect(x + 2, y + height - 6, 4, 6);
+    ctx.fillRect(x + width - 6, y + height - 6, 4, 6);
+  }
+
+  // Arms (climbing)
+  if (anim === ANIM.CLIMB) {
+    ctx.fillStyle = C2.PLAYER;
+    const armOff = (animFrame % 2 === 0) ? -2 : 2;
+    ctx.fillRect(x - 3, y + 8 + armOff, 5, 4);
+    ctx.fillRect(x + width - 2, y + 8 - armOff, 5, 4);
+  }
+
+  ctx.restore();
 }

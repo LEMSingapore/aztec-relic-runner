@@ -3,47 +3,47 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aztec Relic Runner</title>
+  <title>Monte Clone — Aztec Relic Runner</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #0d0a05;
+      background: #0d0620;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
       font-family: monospace;
-      color: #c8a040;
+      color: #ccc;
     }
-
     h1 {
-      font-size: 1.4rem;
-      letter-spacing: 0.12em;
-      margin-bottom: 12px;
-      text-shadow: 0 0 12px #ff9900aa;
+      font-size: 14px;
+      letter-spacing: 3px;
+      color: #ffd700;
+      margin-bottom: 8px;
+      text-transform: uppercase;
     }
-
-    #gameCanvas {
+    #game-canvas {
       display: block;
-      border: 2px solid #7a5c2e;
-      box-shadow: 0 0 32px #ff990033;
-      image-rendering: pixelated;
+      border: 3px solid #5533aa;
+      box-shadow: 0 0 30px #5533aa88;
+      cursor: none;
     }
-
-    footer {
-      margin-top: 12px;
-      font-size: 0.7rem;
-      color: #55401a;
-      letter-spacing: 0.08em;
+    #controls {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #666;
+      text-align: center;
+      line-height: 1.8;
     }
   </style>
 </head>
 <body>
-  <h1>☆ AZTEC RELIC RUNNER ☆</h1>
-  <canvas id="gameCanvas" width="640" height="400"></canvas>
-  <footer>arrows / WASD · Space or W/↑ to jump · explore all rooms · find the idol · reach the EXIT</footer>
+  <h1>Monte Clone &mdash; Aztec Relic Runner</h1>
+  <canvas id="game-canvas"></canvas>
+  <div id="controls">
+    ← → / A D : Move &nbsp;|&nbsp; ↑ ↓ / W S : Climb &nbsp;|&nbsp; Space / K : Jump &nbsp;|&nbsp; Enter / R : Restart
+  </div>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

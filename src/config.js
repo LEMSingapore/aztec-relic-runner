@@ -1,66 +1,73 @@
-// config.js — tunable game constants
+/**
+ * config.js — Tunable constants for Monte Clone
+ * All game-wide settings live here so they're easy to tweak.
+ */
 
 export const CONFIG = {
-  // Canvas
-  CANVAS_WIDTH: 640,
-  CANVAS_HEIGHT: 400,
+  // Internal resolution (upscaled to canvas)
+  INTERNAL_WIDTH: 320,
+  INTERNAL_HEIGHT: 240,
 
-  // World generation
-  ROOM_COUNT: 8,
-  TRAP_DENSITY: 0.25,   // probability a platform edge spawns spikes
-  ENEMY_DENSITY: 0.4,   // probability an enemy spawns per room
-
-  // Player
-  PLAYER_MAX_HEALTH: 3,
-  PLAYER_SPEED: 160,     // px/s horizontal
-  PLAYER_JUMP_VEL: -340, // px/s upward
-  PLAYER_WIDTH: 20,
-  PLAYER_HEIGHT: 28,
-  GRAVITY: 800,          // px/s²
-  CLIMB_SPEED: 90,       // px/s on ladder
-
-  // Enemy (snake)
-  SNAKE_SPEED: 60,       // px/s
-  SNAKE_WIDTH: 22,
-  SNAKE_HEIGHT: 14,
-
-  // Traps
-  SPIKE_WIDTH: 16,
-  SPIKE_HEIGHT: 10,
-  SPIKE_DAMAGE: 1,
-
-  // Treasure
-  TREASURE_SCORE: 50,
-  IDOL_SCORE: 500,
+  // Canvas display scale
+  DISPLAY_SCALE: 3,
 
   // Physics
-  MAX_FALL_SPEED: 600,
+  GRAVITY: 0.35,
+  JUMP_VELOCITY: -7.5,
+  PLAYER_SPEED: 1.6,
+  CLIMB_SPEED: 1.2,
 
-  // Tile
-  TILE: 32,              // tile size for platforms/ladders
+  // Player
+  PLAYER_WIDTH: 14,
+  PLAYER_HEIGHT: 20,
+  MAX_FALL_SPEED: 9,
 
-  // Room
-  ROOM_W: 640,
-  ROOM_H: 400,
+  // HUD
+  HUD_HEIGHT: 20,
 
-  // Colours (palette)
-  COL: {
-    BG:        '#1a1008',
-    FLOOR:     '#7a5c2e',
-    PLATFORM:  '#8c6a38',
-    LADDER:    '#c8a040',
-    PLAYER:    '#f0d060',
-    SNAKE:     '#30b030',
-    SPIKE:     '#cc3333',
-    TREASURE:  '#ffd700',
-    IDOL:      '#ff9900',
-    DOOR:      '#4080c0',
-    HUD_BG:    'rgba(0,0,0,0.55)',
-    WIN:       '#40ff80',
-    LOSE:      '#ff4040',
-    TEXT:      '#ffffff',
-    HEART_ON:  '#ff3333',
-    HEART_OFF: '#553333',
-    EXIT_DOOR: '#00ffcc',
+  // Tile size for level grid
+  TILE: 16,
+
+  // Pyramid layout
+  FLOORS: 4,
+  ROOMS_PER_FLOOR: [4, 5, 5, 6],   // floor 0 = top, floor 3 = bottom
+
+  // Scoring
+  JEWEL_SCORE: 250,
+  KEY_SCORE: 100,
+  TREASURE_CHAMBER_BONUS: 5000,
+
+  // Lives
+  STARTING_LIVES: 3,
+
+  // Enemy speeds
+  SKULL_SPEED: 0.9,
+  SPIDER_SPEED: 0.7,
+
+  // Colors (retro palette)
+  COLORS: {
+    BG:          '#1a0a2e',
+    WALL:        '#5533aa',
+    FLOOR:       '#7755cc',
+    LADDER:      '#ddaa44',
+    CHAIN:       '#aaaaaa',
+    PLAYER:      '#ff9944',
+    SKULL:       '#ffffff',
+    SPIDER:      '#44dd44',
+    FIRE:        '#ff4400',
+    DOOR_RED:    '#cc2222',
+    DOOR_BLUE:   '#2244cc',
+    DOOR_GREEN:  '#22aa44',
+    KEY_RED:     '#ff4444',
+    KEY_BLUE:    '#4488ff',
+    KEY_GREEN:   '#44ee66',
+    JEWEL:       '#ff66ff',
+    TORCH:       '#ffaa22',
+    SWORD:       '#ccccff',
+    AMULET:      '#ffdd00',
+    HUD_BG:      '#0d0620',
+    TEXT:        '#ffffff',
+    SCORE_TEXT:  '#ffdd88',
+    TREASURE:    '#ffd700',
   },
 };
