@@ -222,40 +222,83 @@ export class Game {
     const room = this.currentRoom;
     const C    = CONFIG.COLORS;
 
-    // Background
+    // Background fill
     ctx.fillStyle = room.bgColor;
     ctx.fillRect(0, HUD, W, H - HUD);
 
-    // Draw platforms/walls
-    ctx.fillStyle = C.WALL;
-    for (const plat of room.platforms) {
-      ctx.fillStyle = C.FLOOR;
-      ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-      // Ledge highlight
-      ctx.fillStyle = C.WALL;
-      ctx.fillRect(plat.x, plat.y, plat.w, 2);
+    // Subtle dot pattern overlay
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    for (let dx = 8; dx < W; dx += 16) {
+      for (let dy = HUD + 8; dy < H; dy += 16) {
+        ctx.fillRect(dx, dy, 1, 1);
+      }
     }
 
-    // Draw ladders
-    ctx.strokeStyle = C.LADDER;
-    ctx.lineWidth = 2;
+    // Draw ladders BEFORE platforms so platforms visually cover them at surface level
     for (const ladder of room.ladders) {
-      // Side rails
+      ctx.strokeStyle = '#ddaa44';
+      ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(ladder.x, ladder.y); ctx.lineTo(ladder.x, ladder.y + ladder.h); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(ladder.x + 8, ladder.y); ctx.lineTo(ladder.x + 8, ladder.y + ladder.h); ctx.stroke();
-      // Rungs
-      for (let ry = ladder.y; ry < ladder.y + ladder.h; ry += 8) {
+      ctx.lineWidth = 2;
+      for (let ry = ladder.y; ry <= ladder.y + ladder.h; ry += 8) {
         ctx.beginPath(); ctx.moveTo(ladder.x, ry); ctx.lineTo(ladder.x + 8, ry); ctx.stroke();
       }
     }
 
-    // Draw chains
-    ctx.strokeStyle = C.CHAIN;
-    ctx.lineWidth = 2;
+    // Draw chains as oval links
     for (const chain of room.chains) {
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(chain.x + 2, chain.y); ctx.lineTo(chain.x + 2, chain.y + chain.h); ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.strokeStyle = '#bbbbbb';
+      ctx.lineWidth = 1.5;
+      for (let cy = chain.y; cy < chain.y + chain.h; cy += 6) {
+        const linkIdx = Math.floor((cy - chain.y) / 6);
+        const xOff = (linkIdx % 2) * 2;
+        ctx.beginPath();
+        ctx.ellipse(chain.x + 2 + xOff, cy + 3, 2, 3, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // Draw platforms (rendered AFTER ladders so they cover ladder tops cleanly)
+    for (const plat of room.platforms) {
+      const isWall = plat.w === 8 && (plat.x === 0 || plat.x === W - 8);
+
+      if (isWall) {
+        // Stone wall with horizontal seams and diamond carvings
+        ctx.fillStyle = '#5533aa';
+        ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+        ctx.fillStyle = '#3322aa';
+        for (let sy = plat.y; sy < plat.y + plat.h; sy += 16) {
+          ctx.fillRect(plat.x, sy, plat.w, 1);
+        }
+        ctx.strokeStyle = '#7755dd';
+        ctx.lineWidth = 1;
+        const wcx = plat.x + plat.w / 2;
+        for (let dy = plat.y + 16; dy < plat.y + plat.h; dy += 32) {
+          ctx.beginPath();
+          ctx.moveTo(wcx,     dy - 3);
+          ctx.lineTo(wcx + 2, dy);
+          ctx.lineTo(wcx,     dy + 3);
+          ctx.lineTo(wcx - 2, dy);
+          ctx.closePath();
+          ctx.stroke();
+        }
+      } else {
+        // Stone brick platform
+        ctx.fillStyle = '#7755cc';
+        ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+        // Top highlight
+        ctx.fillStyle = '#aa88ff';
+        ctx.fillRect(plat.x, plat.y, plat.w, 2);
+        // Bottom shadow
+        ctx.fillStyle = '#3322aa';
+        ctx.fillRect(plat.x, plat.y + plat.h - 2, plat.w, 2);
+        // Vertical brick seams every 16px
+        ctx.fillStyle = '#5533aa';
+        for (let sx = plat.x + 16; sx < plat.x + plat.w; sx += 16) {
+          ctx.fillRect(sx, plat.y, 1, plat.h);
+        }
+      }
     }
 
     // Draw doors
@@ -277,7 +320,7 @@ export class Game {
     // Draw HUD
     this._drawHUD(ctx);
 
-    // Room name banner (fade in)
+    // Room name banner
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.font = '6px monospace';
     ctx.textAlign = 'center';
@@ -287,37 +330,71 @@ export class Game {
 
   _drawHUD(ctx) {
     const C = CONFIG.COLORS;
-    ctx.fillStyle = C.HUD_BG;
+    // HUD gradient background
+    const grad = ctx.createLinearGradient(0, 0, 0, HUD);
+    grad.addColorStop(0, '#1a0a2e');
+    grad.addColorStop(1, '#0d0620');
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, HUD);
+    // Separator line
+    ctx.fillStyle = '#5533aa';
+    ctx.fillRect(0, HUD - 1, W, 1);
 
-    // Score
+    // Score (left)
     ctx.fillStyle = C.SCORE_TEXT;
-    ctx.font = '8px monospace';
-    ctx.fillText(`SCORE:${this.score}`, 4, 13);
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${this.score}`, 4, 13);
 
-    // Lives
-    ctx.fillStyle = C.PLAYER;
-    ctx.fillText(`LIVES:${this.lives}`, 140, 13);
+    // Lives as pixel-art hearts
+    let lx = 70;
+    for (let i = 0; i < this.lives; i++) {
+      // Heart: two circles + triangle
+      ctx.fillStyle = '#ff3344';
+      ctx.beginPath(); ctx.arc(lx + 2, 8, 2.5, Math.PI, 0); ctx.fill();
+      ctx.beginPath(); ctx.arc(lx + 5, 8, 2.5, Math.PI, 0); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(lx, 8); ctx.lineTo(lx + 3.5, 14); ctx.lineTo(lx + 7, 8);
+      ctx.closePath(); ctx.fill();
+      lx += 11;
+    }
 
-    // Keys
+    // Keys in HUD
     const keyColors = [
       { k: 'key_red',   color: C.KEY_RED },
       { k: 'key_blue',  color: C.KEY_BLUE },
       { k: 'key_green', color: C.KEY_GREEN },
     ];
-    let kx = 230;
+    let kx = 180;
     for (const { k, color } of keyColors) {
       const count = this.inventory[k];
       if (count > 0) {
+        // Mini key icon
         ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(kx + 4, 10, 4, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(kx + 3, 10, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillRect(kx + 3, 11, 7, 2);
+        ctx.fillRect(kx + 8, 12, 1, 2);
+        ctx.fillRect(kx + 6, 12, 1, 2);
         ctx.fillStyle = C.TEXT;
-        ctx.fillText(count, kx + 10, 13);
-        kx += 20;
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(count, kx + 12, 14);
+        kx += 18;
       }
     }
+
+    // Room name (right side, muted)
+    ctx.fillStyle = 'rgba(180,150,255,0.55)';
+    ctx.font = '6px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(this.currentRoom ? this.currentRoom.name.toUpperCase() : '', W - 4, 8);
+    // Score label
+    ctx.fillStyle = 'rgba(255,220,120,0.5)';
+    ctx.font = '5px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('PTS', 4, 6);
+
+    ctx.textAlign = 'left';
   }
 
   _drawTitle(ctx) {
@@ -425,41 +502,96 @@ function _aabbOverlap(a, b) {
 
 function _drawDoor(ctx, door, inventory) {
   const C = CONFIG.COLORS;
-  let color;
-  switch (door.color) {
-    case 'red':   color = C.DOOR_RED;   break;
-    case 'blue':  color = C.DOOR_BLUE;  break;
-    case 'green': color = C.DOOR_GREEN; break;
-    default:      color = '#444455';    break;  // open / passable
-  }
+  const dx = door.x, dy = door.y, dw = door.w, dh = door.h;
+  const cx = dx + dw / 2;
+  const archR = dw / 2;
 
-  // Door frame
-  ctx.fillStyle = color;
-  ctx.fillRect(door.x, door.y, door.w, door.h);
+  if (door.color === 'open') {
+    // Dark archway — reads as an open passage
+    ctx.fillStyle = '#222233';
+    ctx.beginPath();
+    ctx.rect(dx, dy + archR, dw, dh - archR);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, dy + archR, archR, Math.PI, 0);
+    ctx.fill();
+    // Frame outline
+    ctx.strokeStyle = '#5544aa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(dx, dy + dh);
+    ctx.lineTo(dx, dy + archR);
+    ctx.arc(cx, dy + archR, archR, Math.PI, 0);
+    ctx.lineTo(dx + dw, dy + dh);
+    ctx.stroke();
+  } else {
+    let color;
+    switch (door.color) {
+      case 'red':   color = C.DOOR_RED;   break;
+      case 'blue':  color = C.DOOR_BLUE;  break;
+      case 'green': color = C.DOOR_GREEN; break;
+      default:      color = '#444455';    break;
+    }
 
-  // Door inner highlight
-  ctx.fillStyle = 'rgba(255,255,255,0.2)';
-  ctx.fillRect(door.x + 2, door.y + 2, door.w - 4, door.h - 4);
-
-  // Lock icon if color-keyed
-  if (door.color !== 'open') {
-    // Check if player has the key — dim if missing
     const hasKey =
       (door.color === 'red'   && inventory.key_red   > 0) ||
       (door.color === 'blue'  && inventory.key_blue  > 0) ||
       (door.color === 'green' && inventory.key_green > 0);
 
+    // Door body with arch
+    ctx.fillStyle = hasKey ? color : _darkenColor(color, 0.5);
+    ctx.beginPath();
+    ctx.rect(dx, dy + archR, dw, dh - archR);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, dy + archR, archR, Math.PI, 0);
+    ctx.fill();
+
+    // Door frame (lighter border)
+    ctx.strokeStyle = hasKey ? _lightenColor(color) : '#666666';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(dx, dy + dh);
+    ctx.lineTo(dx, dy + archR);
+    ctx.arc(cx, dy + archR, archR, Math.PI, 0);
+    ctx.lineTo(dx + dw, dy + dh);
+    ctx.stroke();
+
+    // Keyhole symbol in center
+    const kcy = dy + archR + (dh - archR) * 0.4;
+    ctx.fillStyle = hasKey ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.8)';
+    ctx.beginPath();
+    ctx.arc(cx, kcy, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(cx - 1.5, kcy, 3, 4);
+
     if (!hasKey) {
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(door.x, door.y, door.w, door.h);
-      // Padlock circle
-      ctx.strokeStyle = '#ffdd00';
-      ctx.lineWidth = 1;
+      // Dim overlay to show locked
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.beginPath();
-      ctx.arc(door.x + door.w / 2, door.y + door.h / 2 - 4, 4, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = '#ffdd00';
-      ctx.fillRect(door.x + door.w / 2 - 4, door.y + door.h / 2, 8, 6);
+      ctx.rect(dx, dy + archR, dw, dh - archR);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, dy + archR, archR, Math.PI, 0);
+      ctx.fill();
     }
   }
+}
+
+function _lightenColor(hex) {
+  // Simple lighten by blending with white
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  const lr = Math.min(255, r + 80);
+  const lg = Math.min(255, g + 80);
+  const lb = Math.min(255, b + 80);
+  return `rgb(${lr},${lg},${lb})`;
+}
+
+function _darkenColor(hex, factor) {
+  const r = Math.floor(parseInt(hex.slice(1,3), 16) * factor);
+  const g = Math.floor(parseInt(hex.slice(3,5), 16) * factor);
+  const b = Math.floor(Math.min(255, parseInt(hex.slice(5,7), 16) * factor));
+  return `rgb(${r},${g},${b})`;
 }
