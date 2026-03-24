@@ -322,7 +322,7 @@ export class Game {
 
     // Room name banner
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.font = '6px monospace';
+    ctx.font = '9px ' + CONFIG.FONT;
     ctx.textAlign = 'center';
     ctx.fillText(room.name.toUpperCase(), W / 2, HUD + 12);
     ctx.textAlign = 'left';
@@ -342,7 +342,7 @@ export class Game {
 
     // Score (left)
     ctx.fillStyle = C.SCORE_TEXT;
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 9px ' + CONFIG.FONT;
     ctx.textAlign = 'left';
     ctx.fillText(`${this.score}`, 4, 13);
 
@@ -376,7 +376,7 @@ export class Game {
         ctx.fillRect(kx + 8, 12, 1, 2);
         ctx.fillRect(kx + 6, 12, 1, 2);
         ctx.fillStyle = C.TEXT;
-        ctx.font = '7px monospace';
+        ctx.font = '9px ' + CONFIG.FONT;
         ctx.textAlign = 'left';
         ctx.fillText(count, kx + 12, 14);
         kx += 18;
@@ -385,12 +385,12 @@ export class Game {
 
     // Room name (right side, muted)
     ctx.fillStyle = 'rgba(180,150,255,0.55)';
-    ctx.font = '6px monospace';
+    ctx.font = '9px ' + CONFIG.FONT;
     ctx.textAlign = 'right';
     ctx.fillText(this.currentRoom ? this.currentRoom.name.toUpperCase() : '', W - 4, 8);
     // Score label
     ctx.fillStyle = 'rgba(255,220,120,0.5)';
-    ctx.font = '5px monospace';
+    ctx.font = '9px ' + CONFIG.FONT;
     ctx.textAlign = 'left';
     ctx.fillText('PTS', 4, 6);
 
@@ -399,44 +399,86 @@ export class Game {
 
   _drawTitle(ctx) {
     const C = CONFIG.COLORS;
+
+    // Background gradient-ish
     ctx.fillStyle = C.BG;
     ctx.fillRect(0, 0, W, H);
+    // Subtle star field
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    for (let i = 0; i < 40; i++) {
+      const sx = (i * 73 + 11) % W;
+      const sy = (i * 47 + 7) % (H - 80);
+      ctx.fillRect(sx, sy, 1, 1);
+    }
 
-    // Pyramid decorative shape
-    ctx.strokeStyle = CONFIG.COLORS.WALL;
+    // Pyramid silhouette (filled)
+    const py = 55;
+    ctx.fillStyle = '#1a0a3a';
+    ctx.beginPath();
+    ctx.moveTo(W / 2, py);
+    ctx.lineTo(W - 20, 175);
+    ctx.lineTo(20, 175);
+    ctx.closePath();
+    ctx.fill();
+
+    // Pyramid outline with glow
+    ctx.shadowColor = '#7744cc';
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = C.WALL_LIGHT;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(W / 2, 40);
-    ctx.lineTo(W - 30, 160);
-    ctx.lineTo(30, 160);
+    ctx.moveTo(W / 2, py);
+    ctx.lineTo(W - 20, 175);
+    ctx.lineTo(20, 175);
     ctx.closePath();
     ctx.stroke();
 
-    // Title
-    ctx.fillStyle = CONFIG.COLORS.TREASURE;
-    ctx.font = 'bold 16px monospace';
+    // Pyramid steps (horizontal lines)
+    ctx.strokeStyle = 'rgba(170,136,255,0.3)';
+    ctx.lineWidth = 1;
+    for (let s = 1; s <= 4; s++) {
+      const t = s / 5;
+      const sy2 = py + (175 - py) * t;
+      const hw = (W / 2 - 20) * t;
+      ctx.beginPath();
+      ctx.moveTo(W / 2 - hw, sy2);
+      ctx.lineTo(W / 2 + hw, sy2);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // Title with gold glow
+    ctx.shadowColor = '#ffaa00';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = C.TREASURE;
+    ctx.font = 'bold 14px ' + CONFIG.FONT;
     ctx.textAlign = 'center';
-    ctx.fillText('MONTE CLONE', W / 2, 30);
+    ctx.fillText('MONTE CLONE', W / 2, 28);
+    ctx.shadowBlur = 0;
 
     ctx.fillStyle = '#ff9944';
-    ctx.font = '8px monospace';
-    ctx.fillText("AZTEC RELIC RUNNER", W / 2, 44);
+    ctx.font = '7px ' + CONFIG.FONT;
+    ctx.fillText('AZTEC RELIC RUNNER', W / 2, 44);
 
-    ctx.fillStyle = CONFIG.COLORS.JEWEL;
-    ctx.font = '7px monospace';
-    ctx.fillText('FIND THE AMULET IN THE', W / 2, 170);
-    ctx.fillText('TREASURE CHAMBER!', W / 2, 180);
+    // Jewel decoration
+    ctx.fillStyle = C.JEWEL;
+    ctx.font = '7px ' + CONFIG.FONT;
+    ctx.fillText('FIND THE AMULET IN THE', W / 2, 182);
+    ctx.fillText('TREASURE CHAMBER!', W / 2, 194);
 
-    ctx.fillStyle = '#aaa';
-    ctx.font = '7px monospace';
-    ctx.fillText('ARROWS / WASD : MOVE & CLIMB', W / 2, 195);
-    ctx.fillText('SPACE / K : JUMP', W / 2, 205);
+    ctx.fillStyle = C.TEXT_DIM;
+    ctx.font = '7px ' + CONFIG.FONT;
+    ctx.fillText('ARROWS/WASD: MOVE & CLIMB', W / 2, 208);
+    ctx.fillText('SPACE/K: JUMP', W / 2, 220);
 
-    // Blink press start
+    // Blinking start prompt
     if (Math.floor(Date.now() / 500) % 2 === 0) {
-      ctx.fillStyle = CONFIG.COLORS.TEXT;
-      ctx.font = '8px monospace';
-      ctx.fillText('PRESS SPACE TO START', W / 2, 220);
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = C.TEXT;
+      ctx.font = '8px ' + CONFIG.FONT;
+      ctx.fillText('PRESS SPACE TO START', W / 2, 236);
+      ctx.shadowBlur = 0;
     }
 
     ctx.textAlign = 'left';
@@ -444,46 +486,70 @@ export class Game {
 
   _drawGameOver(ctx) {
     const C = CONFIG.COLORS;
-    ctx.fillStyle = '#110000';
+    // Dark red vignette
+    ctx.fillStyle = '#0e0000';
     ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(80,0,0,0.4)';
+    ctx.fillRect(40, 60, W - 80, 120);
+    ctx.strokeStyle = '#660000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(40, 60, W - 80, 120);
 
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 16;
     ctx.fillStyle = '#ff2222';
-    ctx.font = 'bold 16px monospace';
+    ctx.font = 'bold 14px ' + CONFIG.FONT;
     ctx.textAlign = 'center';
     ctx.fillText('GAME OVER', W / 2, 100);
+    ctx.shadowBlur = 0;
 
     ctx.fillStyle = C.SCORE_TEXT;
-    ctx.font = '8px monospace';
-    ctx.fillText(`FINAL SCORE: ${this.score}`, W / 2, 120);
+    ctx.font = '8px ' + CONFIG.FONT;
+    ctx.fillText('SCORE: ' + this.score, W / 2, 125);
 
-    ctx.fillStyle = C.TEXT;
-    ctx.fillText('PRESS ENTER/R TO RETRY', W / 2, 140);
+    if (Math.floor(Date.now() / 600) % 2 === 0) {
+      ctx.fillStyle = C.TEXT;
+      ctx.font = '7px ' + CONFIG.FONT;
+      ctx.fillText('ENTER / R  TO RETRY', W / 2, 155);
+    }
     ctx.textAlign = 'left';
   }
 
   _drawVictory(ctx) {
     const C = CONFIG.COLORS;
-    ctx.fillStyle = '#001100';
+    ctx.fillStyle = '#030e00';
     ctx.fillRect(0, 0, W, H);
 
-    // Pulsing gold title
-    const pulse = 0.7 + 0.3 * Math.sin(this.victoryTimer * 0.1);
-    ctx.fillStyle = `rgba(255,215,0,${pulse})`;
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('YOU FOUND THE AMULET!', W / 2, 80);
+    // Sparkle effect
+    for (let i = 0; i < 20; i++) {
+      const t = (Date.now() / 800 + i * 0.37) % 1;
+      const sx = (i * 83 + 40) % (W - 20);
+      const sy = 30 + ((i * 61 + this.victoryTimer) % (H - 60));
+      ctx.fillStyle = `rgba(255,215,0,${1 - t})`;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
 
-    ctx.fillStyle = CONFIG.COLORS.JEWEL;
-    ctx.font = '10px monospace';
-    ctx.fillText('VICTORY!', W / 2, 100);
+    const pulse = 0.75 + 0.25 * Math.sin(this.victoryTimer * 0.08);
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 20 * pulse;
+    ctx.fillStyle = `rgba(255,215,0,${pulse})`;
+    ctx.font = 'bold 14px ' + CONFIG.FONT;
+    ctx.textAlign = 'center';
+    ctx.fillText('VICTORY!', W / 2, 85);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = C.JEWEL;
+    ctx.font = '7px ' + CONFIG.FONT;
+    ctx.fillText('AMULET RECOVERED!', W / 2, 108);
 
     ctx.fillStyle = C.SCORE_TEXT;
-    ctx.font = '8px monospace';
-    ctx.fillText(`FINAL SCORE: ${this.score}`, W / 2, 120);
+    ctx.font = '8px ' + CONFIG.FONT;
+    ctx.fillText('SCORE: ' + this.score, W / 2, 130);
 
-    if (this.victoryTimer > 60 && Math.floor(Date.now() / 500) % 2 === 0) {
+    if (this.victoryTimer > 60 && Math.floor(Date.now() / 600) % 2 === 0) {
       ctx.fillStyle = C.TEXT;
-      ctx.fillText('PRESS ENTER/R TO PLAY AGAIN', W / 2, 145);
+      ctx.font = '7px ' + CONFIG.FONT;
+      ctx.fillText('ENTER / R  TO PLAY AGAIN', W / 2, 155);
     }
     ctx.textAlign = 'left';
   }

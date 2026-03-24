@@ -4,45 +4,61 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monte Clone — Aztec Relic Runner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #0d0620;
+      background: #08031a;
+      background-image:
+        radial-gradient(ellipse at top, #1a0a3e 0%, #08031a 70%);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      font-family: monospace;
+      font-family: 'Press Start 2P', monospace;
       color: #ccc;
     }
     h1 {
-      font-size: 14px;
-      letter-spacing: 3px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      letter-spacing: 2px;
       color: #ffd700;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       text-transform: uppercase;
+      text-shadow: 0 0 12px #ffaa00aa, 0 2px 0 #aa6600;
     }
     #game-canvas {
       display: block;
-      border: 3px solid #5533aa;
-      box-shadow: 0 0 30px #5533aa88;
+      border: 3px solid #7744cc;
+      box-shadow:
+        0 0 0 1px #3322aa,
+        0 0 40px #5533aaaa,
+        0 0 80px #33118855;
+      image-rendering: pixelated;
       cursor: none;
     }
     #controls {
-      margin-top: 10px;
-      font-size: 11px;
-      color: #666;
+      margin-top: 12px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px;
+      color: #554477;
       text-align: center;
-      line-height: 1.8;
+      line-height: 2.2;
+      letter-spacing: 1px;
+    }
+    #controls span {
+      color: #9966cc;
     }
   </style>
 </head>
 <body>
-  <h1>Monte Clone &mdash; Aztec Relic Runner</h1>
+  <h1>⚰ Monte Clone ⚰</h1>
   <canvas id="game-canvas"></canvas>
   <div id="controls">
-    ← → / A D : Move &nbsp;|&nbsp; ↑ ↓ / W S : Climb &nbsp;|&nbsp; Space / K : Jump &nbsp;|&nbsp; Enter / R : Restart
+    <span>← → / A D</span> MOVE &nbsp;|&nbsp; <span>↑ ↓ / W S</span> CLIMB &nbsp;|&nbsp; <span>SPACE / K</span> JUMP &nbsp;|&nbsp; <span>ENTER / R</span> RESTART
   </div>
   <script type="module" src="src/main.js"></script>
 </body>
