@@ -285,25 +285,28 @@ const room_1_3 = buildRoom({
     ...ground(),
     { x: 60,  y: HUD + 90, w: 70, h: 8 },
     { x: 190, y: HUD + 60, w: 70, h: 8 },
-    { x: 120, y: HUD + 150, w: 80, h: 8 },
+    { x: 110, y: HUD + 150, w: 100, h: 8 },  // wider platform, easier to land on
   ],
   ladders: [
-    { x: 154, y: HUD + 158, h: 56 },
+    // Ladder starts above the mid-platform and extends all the way to the floor
+    // so player can climb from ground up through the platform
+    { x: 154, y: HUD + 130, h: 94 },
   ],
   doors: [
     { x: 8,    y: HUD + PLAY_H - 48, w: 16, h: 32, color: 'open', toRoom: 6,  spawnX: W - 32, spawnY: HUD + PLAY_H - 48 },
     { x: W - 24, y: HUD + PLAY_H - 48, w: 16, h: 32, color: 'open', toRoom: 8,  spawnX: 24,     spawnY: HUD + PLAY_H - 48 },
-    // Down red door  (entered from room 3 floor 0)
     { x: 8, y: HUD + 20, w: 16, h: 32, color: 'open', toRoom: 13, spawnX: 24, spawnY: HUD + PLAY_H - 48 },
   ],
   items: [
-    createItem(ITEM_TYPES.JEWEL,     125, HUD + 130),
-    createItem(ITEM_TYPES.KEY_GREEN,  65, HUD + 70),
+    createItem(ITEM_TYPES.JEWEL,     130, HUD + 128),
+    createItem(ITEM_TYPES.KEY_GREEN,  65, HUD + 68),
   ],
   entities: [
-    createFirePit(60, HUD + PLAY_H - 28, 30),
-    createFirePit(190, HUD + PLAY_H - 28, 30),
-    createSkull(130, HUD + PLAY_H - 32, 10, 305),
+    // Fire pits moved inward slightly so there's room to stand near ladder
+    createFirePit(45,  HUD + PLAY_H - 28, 26),
+    createFirePit(210, HUD + PLAY_H - 28, 26),
+    // Skull patrols only left side — doesn't block the ladder
+    createSkull(50, HUD + PLAY_H - 32, 12, 120),
   ],
 });
 

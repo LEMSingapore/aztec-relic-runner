@@ -69,8 +69,16 @@ export function updatePlayer(player, room) {
       player.vx = 0;
     }
   } else {
-    // While climbing, allow slight horizontal nudge to dismount
-    player.vx = 0;
+    // Allow horizontal movement while on ladder so player can dismount
+    if (input.left) {
+      player.vx = -C.PLAYER_SPEED * 0.6;
+      player.facingRight = false;
+    } else if (input.right) {
+      player.vx = C.PLAYER_SPEED * 0.6;
+      player.facingRight = true;
+    } else {
+      player.vx = 0;
+    }
   }
 
   // ── Jumping ──────────────────────────────────────────────────────────────
@@ -122,17 +130,26 @@ export function updatePlayer(player, room) {
 
 function _checkClimbable(player, room) {
   const px = player.x + player.width / 2;
-  const py = player.y + player.height / 2;
+  // Check from player top to player bottom + a small lookahead downward
+  // so the player can grab the ladder from the floor at the base
+  const pyTop    = player.y;
+  const pyBottom = player.y + player.height + 4;
 
   for (const ladder of room.ladders) {
-    if (px >= ladder.x - 4 && px <= ladder.x + 12 &&
-        py >= ladder.y && py <= ladder.y + ladder.h) {
+    const lLeft  = ladder.x - 6;
+    const lRight = ladder.x + 14;
+    const lTop   = ladder.y;
+    const lBot   = ladder.y + ladder.h;
+    if (px >= lLeft && px <= lRight && pyBottom >= lTop && pyTop <= lBot) {
       return true;
     }
   }
   for (const chain of room.chains) {
-    if (px >= chain.x - 4 && px <= chain.x + 8 &&
-        py >= chain.y && py <= chain.y + chain.h) {
+    const cLeft  = chain.x - 6;
+    const cRight = chain.x + 10;
+    const cTop   = chain.y;
+    const cBot   = chain.y + chain.h;
+    if (px >= cLeft && px <= cRight && pyBottom >= cTop && pyTop <= cBot) {
       return true;
     }
   }
