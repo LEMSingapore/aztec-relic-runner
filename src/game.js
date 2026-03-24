@@ -42,6 +42,7 @@ export class Game {
     this._spawnX     = 0;
     this._spawnY     = 0;
     this.transitioning = false;
+    this._transitionCooldown = 0;
   }
 
   /** Start or restart the game */
@@ -60,6 +61,7 @@ export class Game {
     this._spawnRoom = roomId;
     this._spawnX = spawnX;
     this._spawnY = spawnY;
+    this._transitionCooldown = 45; // frames before doors can trigger
   }
 
   /** Main update — called once per frame */
@@ -128,8 +130,14 @@ export class Game {
       }
     }
 
+    // ── Transition cooldown (prevents immediately re-entering through same door) ──
+    if (this._transitionCooldown > 0) {
+      this._transitionCooldown--;
+    }
+
     // ── Room transition via doors ─────────────────────────────────────────
     for (const door of room.doors) {
+      if (this._transitionCooldown > 0) break;
       if (!_aabbOverlap(player, door)) continue;
 
       // Check if locked
@@ -137,10 +145,10 @@ export class Game {
       if (door.color === 'blue'  && this.inventory.key_blue  === 0) continue;
       if (door.color === 'green' && this.inventory.key_green === 0) continue;
 
-      // Consume key
-      if (door.color === 'red')   this.inventory.key_red--;
-      if (door.color === 'blue')  this.inventory.key_blue--;
-      if (door.color === 'green') this.inventory.key_green--;
+      // Consume key (only if door is actually locked)
+      if (door.color === 'red')   { this.inventory.key_red--;   }
+      if (door.color === 'blue')  { this.inventory.key_blue--;  }
+      if (door.color === 'green') { this.inventory.key_green--; }
 
       this._enterRoom(door.toRoom, door.spawnX, door.spawnY);
       return;
